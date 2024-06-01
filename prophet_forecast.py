@@ -19,38 +19,53 @@ def predict(csv_file_path):
     # Convert 'ds' column to proper datetime objects
     df['ds'] = pd.to_datetime(df['ds'])
 
-    # Initialize the Prophet model
-    m = Prophet()
+    # Initialize an empty dataframe for the forecast
+    forecast_df = pd.DataFrame()
 
-    # Add external regressors
-    m.add_regressor('distribution_center_id')
-    m.add_regressor('inventory_item_id')
+    # Group the data by 'distribution_center_id' and 'inventory_item_id'
+    grouped = df.groupby(['distribution_center_id', 'inventory_item_id'])
 
-    # Fit the model
-    m.fit(df)
+    # Loop through each group
+    for (dc_id, item_id), group_df in grouped:
+        # Initialize the Prophet model
+        m = Prophet()
 
-    # Create a future dataframe for the next 30 days
-    future = m.make_future_dataframe(periods=30)
+        # Add external regressors
+        m.add_regressor('distribution_center_id')
+        m.add_regressor('inventory_item_id')
 
-    # Add the same regressors to the future dataframe (here you might want to fill with reasonable future values)
-    future['distribution_center_id'] = df['distribution_center_id'].iloc[-1]
-    future['inventory_item_id'] = df['inventory_item_id'].iloc[-1]
+        # Fit the model
+        m.fit(group_df)
 
-    # Make predictions
-    forecast = m.predict(future)
+        # Create a future dataframe for the next 30 days
+        future = m.make_future_dataframe(periods=30)
 
-    # Return the forecast
-    return forecast
+        # Add the same regressors to the future dataframe
+        future['distribution_center_id'] = dc_id
+        future['inventory_item_id'] = item_id
+
+        # Make predictions
+        forecast = m.predict(future)
+
+        # Add 'distribution_center_id' and 'inventory_item_id' columns to the forecast
+        forecast['distribution_center_id'] = dc_id
+        forecast['inventory_item_id'] = item_id
+
+        # Append the forecast to the main forecast dataframe
+        forecast_df = pd.concat([forecast_df, forecast], ignore_index=True)
+
+    # Return the forecast dataframe
+    return forecast_df
 
 
 def main():
     # Define the path to the CSV file
-    csv_file_path = r'C:\Users\edward.wolf\Downloads\model_features.csv'
+    csv_file_path = r'path_to_csv'
 
     # Run the prediction
     forecast = predict(csv_file_path)
 
-    print(forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']])
+    print(forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper', 'distribution_center_id', 'inventory_item_id']])
 
     # Further processing can be done with the forecast here if needed
 
