@@ -7,10 +7,13 @@ from prophet import Prophet
 
 version = '0.1.0'
 
-
 def predict(csv_file_path):
     # Load data from CSV file
     df = pd.read_csv(csv_file_path)
+
+    # Print the first few rows of the dataframe
+    print("== Initial DataFrame:")
+    print(df.head())
 
     # Rename columns as required by Prophet
     df.rename(columns={'ds': 'ds', 'y': 'y', 'distribution_center_id': 'distribution_center_id',
@@ -19,44 +22,51 @@ def predict(csv_file_path):
     # Convert 'ds' column to proper datetime objects
     df['ds'] = pd.to_datetime(df['ds'])
 
-    # Initialize an empty dataframe for the forecast
-    forecast_df = pd.DataFrame()
+    # Check for any NaN values in the dataframe
+    print("== NaN values in DataFrame:")
+    print(df.isna().sum())
 
-    # Group the data by 'distribution_center_id' and 'inventory_item_id'
-    grouped = df.groupby(['distribution_center_id', 'inventory_item_id'])
+    # Initialize an empty DataFrame to store all forecasts
+    all_forecasts = pd.DataFrame()
 
-    # Loop through each group
-    for (dc_id, item_id), group_df in grouped:
+    # Get unique combinations of distribution_center_id and inventory_item_id
+    unique_combinations = df[['distribution_center_id', 'inventory_item_id']].drop_duplicates()
+
+    for _, row in unique_combinations.iterrows():
+        distribution_center_id = row['distribution_center_id']
+        inventory_item_id = row['inventory_item_id']
+
+        # Filter the dataframe for each combination
+        df_comb = df[(df['distribution_center_id'] == 1)]
+
+        # print("== df comb:")
+        # print(df_comb)
+
+        # Debugging print to check the filtered data
+        # print(f"\nFiltered DataFrame for distribution_center_id={distribution_center_id} and inventory_item_id={inventory_item_id}:")
+        # print(df_comb.head())
+
         # Initialize the Prophet model
         m = Prophet()
 
-        # Add external regressors
-        m.add_regressor('distribution_center_id')
-        m.add_regressor('inventory_item_id')
-
         # Fit the model
-        m.fit(group_df)
+        m.fit(df_comb[['ds', 'y']])
 
         # Create a future dataframe for the next 30 days
-        future = m.make_future_dataframe(periods=30)
-
-        # Add the same regressors to the future dataframe
-        future['distribution_center_id'] = dc_id
-        future['inventory_item_id'] = item_id
+        future = m.make_future_dataframe(periods=7)
 
         # Make predictions
         forecast = m.predict(future)
 
-        # Add 'distribution_center_id' and 'inventory_item_id' columns to the forecast
-        forecast['distribution_center_id'] = dc_id
-        forecast['inventory_item_id'] = item_id
+        # Add the combination columns to the forecast
+        forecast['distribution_center_id'] = distribution_center_id
+        forecast['inventory_item_id'] = inventory_item_id
 
-        # Append the forecast to the main forecast dataframe
-        forecast_df = pd.concat([forecast_df, forecast], ignore_index=True)
+        # Append the forecast to all_forecasts DataFrame
+        all_forecasts = pd.concat([all_forecasts, forecast], ignore_index=True)
 
-    # Return the forecast dataframe
-    return forecast_df
-
+    # Return the forecast
+    return all_forecasts
 
 def main():
     # Define the path to the CSV file
@@ -65,10 +75,10 @@ def main():
     # Run the prediction
     forecast = predict(csv_file_path)
 
-    print(forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper', 'distribution_center_id', 'inventory_item_id']])
+    # Print the first 5 rows of the forecast
+    print(forecast.head())
 
     # Further processing can be done with the forecast here if needed
-
 
 if __name__ == "__main__":
     main()
