@@ -60,7 +60,7 @@ forecast_data.reset_index(drop=True, inplace=True)
 cv_results_all.reset_index(drop=True, inplace=True)
 
 # Output forecast data to a CSV file
-forecast_data.to_csv('forecast_results.csv', index=False)
+# forecast_data.to_csv('forecast_results.csv', index=False)
 
 # Example usage:
 print(forecast_data)
