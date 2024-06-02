@@ -6,7 +6,7 @@ from sklearn.metrics import accuracy_score
 import numpy as np
 
 # Load data
-df = pd.read_csv('C:/Users/edward.wolf/Documents/idp_projects/idp_demand_forecasting_prophet_model/model_features.csv')
+df = pd.read_csv('path_to_csv')
 
 # Convert 'ds' column to datetime
 df['ds'] = pd.to_datetime(df['ds'])

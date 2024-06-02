@@ -3,7 +3,7 @@ from prophet import Prophet
 
 # Sample data (replace with your actual dataset)
 # Assuming you have aggregated data grouped by ds, distribution_center_id, and inventory_item_id
-data = pd.read_csv('C:/Users/edward.wolf/Documents/idp_projects/idp_demand_forecasting_prophet_model/model_features.csv')
+data = pd.read_csv('path_to_csv')
 
 # Initialize an empty DataFrame to store forecast data
 forecast_data = pd.DataFrame()
