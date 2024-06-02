@@ -17,7 +17,7 @@ for center_id, group in data.groupby('distribution_center_id'):
     model.fit(group)
 
     # Make future dates DataFrame for forecasting
-    future = model.make_future_dataframe(periods=7)  # Adjust forecast period as needed
+    future = model.make_future_dataframe(periods=30)  # Adjust forecast period as needed
 
     # Generate forecast for future dates
     forecast = model.predict(future)
