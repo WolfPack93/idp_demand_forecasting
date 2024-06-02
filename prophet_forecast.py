@@ -1,84 +1,41 @@
-# Purpose: A python script to run a Prophet Time Series ML prediction model for ecommerce demand forecasting
-# Creator: Ed Wolf
-# Created: 20240601
-
 import pandas as pd
 from prophet import Prophet
 
-version = '0.1.0'
+# Sample data (replace with your actual dataset)
+# Assuming you have aggregated data grouped by ds, distribution_center_id, and inventory_item_id
+data = pd.read_csv('C:/Users/edward.wolf/Documents/idp_projects/idp_demand_forecasting_prophet_model/model_features.csv')
 
-def predict(csv_file_path):
-    # Load data from CSV file
-    df = pd.read_csv(csv_file_path)
+# Initialize an empty DataFrame to store forecast data
+forecast_data = pd.DataFrame()
 
-    # Print the first few rows of the dataframe
-    print("== Initial DataFrame:")
-    print(df.head())
+# Iterate over each distribution center
+for center_id, group in data.groupby('distribution_center_id'):
+    # Assuming 'ds' is your date column and 'y' is your demand column
+    group = group.rename(columns={'ds': 'ds', 'y': 'y'})
 
-    # Rename columns as required by Prophet
-    df.rename(columns={'ds': 'ds', 'y': 'y', 'distribution_center_id': 'distribution_center_id',
-                       'inventory_item_id': 'inventory_item_id'}, inplace=True)
+    # Create and fit Prophet model
+    model = Prophet(yearly_seasonality=True, daily_seasonality=False)
+    model.fit(group)
 
-    # Convert 'ds' column to proper datetime objects
-    df['ds'] = pd.to_datetime(df['ds'])
+    # Make future dates DataFrame for forecasting
+    future = model.make_future_dataframe(periods=30)  # Forecast for 30 days
 
-    # Check for any NaN values in the dataframe
-    print("== NaN values in DataFrame:")
-    print(df.isna().sum())
+    # Generate forecast for future dates
+    forecast = model.predict(future)
 
-    # Initialize an empty DataFrame to store all forecasts
-    all_forecasts = pd.DataFrame()
+    # Add distribution_center_id column to the forecast DataFrame
+    forecast['distribution_center_id'] = center_id
+    forecast['inventory_item_id'] = data['inventory_item_id']
 
-    # Get unique combinations of distribution_center_id and inventory_item_id
-    unique_combinations = df[['distribution_center_id', 'inventory_item_id']].drop_duplicates()
+    # Concatenate the current forecast with existing forecast_data
+    forecast_data = pd.concat(
+        [forecast_data, forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper', 'distribution_center_id', 'inventory_item_id']]])
 
-    for _, row in unique_combinations.iterrows():
-        distribution_center_id = row['distribution_center_id']
-        inventory_item_id = row['inventory_item_id']
+# Reset index
+forecast_data.reset_index(drop=True, inplace=True)
 
-        # Filter the dataframe for each combination
-        df_comb = df[(df['distribution_center_id'] == 1)]
+# Output forecast data to a CSV file
+forecast_data.to_csv('forecast_results.csv', index=False)
 
-        # print("== df comb:")
-        # print(df_comb)
-
-        # Debugging print to check the filtered data
-        # print(f"\nFiltered DataFrame for distribution_center_id={distribution_center_id} and inventory_item_id={inventory_item_id}:")
-        # print(df_comb.head())
-
-        # Initialize the Prophet model
-        m = Prophet()
-
-        # Fit the model
-        m.fit(df_comb[['ds', 'y']])
-
-        # Create a future dataframe for the next 30 days
-        future = m.make_future_dataframe(periods=7)
-
-        # Make predictions
-        forecast = m.predict(future)
-
-        # Add the combination columns to the forecast
-        forecast['distribution_center_id'] = distribution_center_id
-        forecast['inventory_item_id'] = inventory_item_id
-
-        # Append the forecast to all_forecasts DataFrame
-        all_forecasts = pd.concat([all_forecasts, forecast], ignore_index=True)
-
-    # Return the forecast
-    return all_forecasts
-
-def main():
-    # Define the path to the CSV file
-    csv_file_path = r'path_to_csv'
-
-    # Run the prediction
-    forecast = predict(csv_file_path)
-
-    # Print the first 5 rows of the forecast
-    print(forecast.head())
-
-    # Further processing can be done with the forecast here if needed
-
-if __name__ == "__main__":
-    main()
+# Example usage:
+print(forecast_data)
