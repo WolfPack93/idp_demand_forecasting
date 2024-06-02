@@ -4,9 +4,18 @@ import matplotlib.pyplot as plt
 from prophet.diagnostics import cross_validation
 from prophet.diagnostics import performance_metrics
 from prophet.plot import plot_cross_validation_metric
+from google.oauth2 import service_account
+import pandas_gbq
+
+credentials = service_account.Credentials.from_service_account_file(
+    '.config/gcp_service_account.json',
+)
+
+gcp_project_id = "dce-gcp-training"
 
 # Load csv file
-data = pd.read_csv('model_features.csv')
+# data = pd.read_csv('model_features.csv')
+data = pandas_gbq.read_gbq("SELECT * FROM `dce-gcp-training.idp_demand_forecasting.model_features`", project_id=gcp_project_id, credentials=credentials)
 
 # Initialize an empty DataFrame to store forecast data
 forecast_data = pd.DataFrame()
@@ -63,5 +72,17 @@ metrics = performance_metrics(cv_results_all)
 print(metrics)
 
 # Visualize results
-plot_cross_validation_metric(cv_results_all, metric='mae')
-plt.show()
+# plot_cross_validation_metric(cv_results_all, metric='mae')
+# plt.show()
+
+# Push results to BigQuery
+
+# Forecast results
+pandas_gbq.to_gbq(
+    forecast_data, 'dce-gcp-training.idp_demand_forecasting.prophet_model_forecast_results', project_id=gcp_project_id, if_exists='replace',
+)
+
+# Model metrics
+# pandas_gbq.to_gbq(
+#     metrics, 'dce-gcp-training.idp_demand_forecasting.prophet_model_metrics', project_id=gcp_project_id, if_exists='replace',
+# )
