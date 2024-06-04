@@ -1,64 +1,120 @@
+import pandas_gbq
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
-import lightgbm as lgb
-from sklearn.metrics import accuracy_score
 import numpy as np
+from google.oauth2 import service_account
+import lightgbm as lgb
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split, TimeSeriesSplit
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+import matplotlib.pyplot as plt
 
-# Load data
-df = pd.read_csv('path_to_csv')
+# Assign variables for GCP project and credentials
+gcp_project_id = "dce-gcp-training"
 
-# Convert 'ds' column to datetime
-df['ds'] = pd.to_datetime(df['ds'])
+credentials = service_account.Credentials.from_service_account_file(
+    '.config/gcp_service_account.json',
+)
 
-# Encode categorical variables
-# encoder_dc = LabelEncoder()
-# encoder_item = LabelEncoder()
-# df['distribution_center_id'] = encoder_dc.fit_transform(df['distribution_center_id'])
-# df['inventory_item_id'] = encoder_item.fit_transform(df['inventory_item_id'])
+# Load data from BigQuery
+data = pandas_gbq.read_gbq("SELECT * FROM `dce-gcp-training.idp_demand_forecasting.model_features`", project_id=gcp_project_id, credentials=credentials)
 
-# Split data into features and target
-X = df.drop(['y'], axis=1)
-y = df['y']
+# Convert date string to actual date datatype
+data['ds'] = pd.to_datetime(data['ds'])
+data.set_index('ds', inplace=True)
 
-# Split data into train and test sets
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# One-hot encode categorical features
+data = pd.get_dummies(data, columns=['distribution_center_name', 'product_name'])
 
-# Convert datetime columns to Unix timestamp format
-X_train['ds'] = pd.to_datetime(X_train['ds']).astype('int64') // 10**9  # Convert to seconds since epoch
-X_test['ds'] = pd.to_datetime(X_test['ds']).astype('int64') // 10**9  # Convert to seconds since epoch
+# Scale data
+scaler = StandardScaler()
+scaled_data = scaler.fit_transform(data)
+
+# Create sequences for LightGBM
+def create_sequences(data, seq_length):
+    xs, ys = [], []
+    for i in range(len(data) - seq_length):
+        x = data[i:i + seq_length]
+        y = data[i + seq_length]
+        xs.append(x)
+        ys.append(y)
+    return np.array(xs), np.array(ys)
+
+SEQ_LENGTH = 30  # Number of time steps to look back
+X, y = create_sequences(scaled_data, SEQ_LENGTH)
+
+# Flatten the sequences for LightGBM
+X_flat = X.reshape(X.shape[0], -1)
+
+# Split into training and testing data
+X_train, X_test, y_train, y_test = train_test_split(X_flat, y, test_size=0.2, random_state=42)
 
 # Create LightGBM dataset
 train_data = lgb.Dataset(X_train, label=y_train)
-test_data = lgb.Dataset(X_test, label=y_test)
+test_data = lgb.Dataset(X_test, label=y_test, reference=train_data)
 
-# Set parameters for LightGBM classifier
+# Define parameters for LightGBM
 params = {
-    'objective': 'multiclass',
-    'num_class': 11, #len(y),  # Number of classes
-    'metric': 'multi_logloss'
+    'objective': 'regression',
+    'metric': 'rmse',
+    'boosting_type': 'gbdt',
+    'num_leaves': 31,
+    'learning_rate': 0.05,
+    'feature_fraction': 0.9
 }
 
 # Train the model
-num_round = 10000
-bst = lgb.train(params, train_data, num_round, valid_sets=[test_data])
+bst = lgb.train(params, train_data, num_boost_round=1000, valid_sets=[train_data, test_data], early_stopping_rounds=50)
 
-# Predictions
-y_pred = bst.predict(X_test)
+# Make predictions
+predictions = bst.predict(X_test, num_iteration=bst.best_iteration)
 
-# Convert predictions to class labels
-y_pred_labels = [np.argmax(pred) for pred in y_pred]
+# Rescale the predictions back to the original scale
+predictions_rescaled = scaler.inverse_transform(predictions.reshape(-1, 1))
+y_test_rescaled = scaler.inverse_transform(y_test.reshape(-1, 1))
 
-# Evaluate accuracy
-accuracy = accuracy_score(y_test, y_pred_labels)
-print("Accuracy:", accuracy)
+# Calculate performance metrics
+mae = mean_absolute_error(y_test_rescaled, predictions_rescaled)
+rmse = mean_squared_error(y_test_rescaled, predictions_rescaled, squared=False)
+print(f"MAE: {mae}, RMSE: {rmse}")
 
-# Example prediction
-example_data = X_test
-example_data['ds'] = pd.to_datetime('2024-06-01')  # Replace with your desired date
-example_data['ds'] = example_data['ds'].astype('int64') // 10**9  # Convert to seconds since epoch
-example_pred = bst.predict(example_data)
+# Plot predictions vs actual values
+plt.figure(figsize=(14, 5))
+plt.plot(y_test_rescaled[:, 0], label='Actual')
+plt.plot(predictions_rescaled[:, 0], label='Predicted')
+plt.legend()
+plt.show()
 
-# Convert prediction to class label
-example_pred_label = np.argmax(example_pred)
-print("Predicted class label:", example_pred_label)
+# Create future dates for forecasting
+future_dates = pd.date_range(data.index[-1] + pd.Timedelta(days=1), periods=30)
+
+# Prepare the future input data
+last_sequence = scaled_data[-SEQ_LENGTH:]
+future_predictions = []
+
+for _ in range(30):
+    last_sequence_flat = last_sequence.reshape(1, -1)
+    pred = bst.predict(last_sequence_flat, num_iteration=bst.best_iteration)
+    future_predictions.append(pred[0])
+    last_sequence = np.append(last_sequence[1:], pred, axis=0)
+
+future_predictions_rescaled = scaler.inverse_transform(np.array(future_predictions).reshape(-1, 1))
+
+# Combine future predictions with future dates
+future_forecast = pd.DataFrame(future_predictions_rescaled, index=future_dates, columns=['prediction'])
+
+# Push results to BigQuery
+# pandas_gbq.to_gbq(
+#     future_forecast.reset_index().rename(columns={'index': 'ds'}),
+#     'dce-gcp-training.idp_demand_forecasting.lightgbm_model_forecast_results',
+#     project_id=gcp_project_id,
+#     if_exists='replace'
+# )
+
+# Save metrics to BigQuery
+# metrics = pd.DataFrame({'MAE': [mae], 'RMSE': [rmse]})
+# pandas_gbq.to_gbq(
+#     metrics,
+#     'dce-gcp-training.idp_demand_forecasting.lightgbm_model_metrics',
+#     project_id=gcp_project_id,
+#     if_exists='replace'
+# )

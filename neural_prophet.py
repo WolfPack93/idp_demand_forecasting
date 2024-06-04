@@ -1,56 +1,76 @@
+import pandas_gbq
 import pandas as pd
-from neuralprophet import NeuralProphet
+import itertools
+import numpy as np
+import matplotlib.pyplot as plt
+from neuralprophet import NeuralProphet, set_random_seed
+from google.oauth2 import service_account
 
-# Load data
-df = pd.read_csv('path_to_csv')
+# Set random seed for reproducibility
+set_random_seed(42)
 
-# Convert 'ds' column to datetime
-df['ds'] = pd.to_datetime(df['ds'])
+# Assign variables for GCP project and credentials
+gcp_project_id = "dce-gcp-training"
 
+credentials = service_account.Credentials.from_service_account_file(
+    '.config/gcp_service_account.json',
+)
 
-# Function to train and forecast using NeuralProphet for each combination of distribution_center_id and inventory_item_id
-def train_and_forecast(df):
-    results = []
+# Load data from BigQuery
+data = pandas_gbq.read_gbq("SELECT * FROM `dce-gcp-training.idp_demand_forecasting.model_features`", project_id=gcp_project_id, credentials=credentials)
 
-    # Get unique combinations of distribution_center_id and inventory_item_id
-    combinations = df[['distribution_center_id', 'inventory_item_id']].drop_duplicates()
+# Convert date string to actual date datatype
+data['ds'] = pd.to_datetime(data['ds'])
 
-    for _, combo in combinations.iterrows():
-        dc_id = combo['distribution_center_id']
-        item_id = combo['inventory_item_id']
+# One-hot encode categorical regressors
+data = pd.get_dummies(data, columns=['distribution_center_name', 'product_name'])
 
-        # Filter the dataframe for each combination
-        df_comb = df[(df['distribution_center_id'] == dc_id) &
-                     (df['inventory_item_id'] == item_id)]
+# Create NeuralProphet model
+model = NeuralProphet(
+    yearly_seasonality=True,
+    n_forecasts=30,  # Number of steps to forecast
+    changepoints_range=0.9,
+    trend_reg=0.1,
+    seasonality_reg=0.1,
+    n_lags=0,  # No autoregression
+)
 
-        # Initialize the NeuralProphet model
-        model = NeuralProphet()
+# Add regressors
+for col in data.columns:
+    if col.startswith('distribution_center_name_') or col.startswith('product_name_'):
+        model.add_regressor(col)
 
-        # Fit the model
-        model.fit(df_comb, freq='D')
+# Fit model
+metrics = model.fit(data, freq='D')
 
-        # Make future dataframe
-        future = model.make_future_dataframe(df_comb, periods=30)
+# Make future dates DataFrame for forecasting
+future = model.make_future_dataframe(data, periods=30, n_historic_predictions=len(data))  # Adjust forecast period as needed
 
-        # Forecast
-        forecast = model.predict(future)
+# Identify the one-hot encoded columns
+regressor_columns = [col for col in data.columns if col.startswith('distribution_center_name_') or col.startswith('product_name_')]
 
-        # Store the result
-        forecast['distribution_center_id'] = dc_id
-        forecast['inventory_item_id'] = item_id
-        results.append(forecast)
+# Get the last known values of the regressors
+last_known_values = data.iloc[-1][regressor_columns]
 
-    # Concatenate all results
-    final_forecast = pd.concat(results, ignore_index=True)
+# Add regressors to the future dataframe
+future = future.merge(data[['ds'] + regressor_columns], on='ds', how='left')
 
-    return final_forecast
+# Fill NaN values with the last known values
+future[regressor_columns] = future[regressor_columns].fillna(last_known_values)
 
+# Generate forecast for future dates
+forecast = model.predict(future)
 
-# Train and forecast
-forecast = train_and_forecast(df)
+# Plot forecast components
+model.plot_components(forecast)
+plt.show()
 
-# Check the forecast
-print(forecast[['ds', 'yhat1', 'yhat_lower1', 'yhat_upper1', 'distribution_center_id', 'inventory_item_id']].head())
+# Output forecast data to a CSV file
+# forecast.to_csv('forecast_results.csv', index=False)
 
-# Save the forecast to a CSV file
-forecast.to_csv('forecast_results.csv', index=False)
+########## Push results to BigQuery ##########
+
+# Forecast results
+# pandas_gbq.to_gbq(
+#     forecast, 'dce-gcp-training.idp_demand_forecasting.neuralprophet_model_forecast_results', project_id=gcp_project_id, if_exists='replace',
+# )
