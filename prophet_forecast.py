@@ -45,6 +45,7 @@ data['ds'] = pd.to_datetime(data['ds'])
 
 # Prepare to store results
 all_forecasts = []
+# all_metrics = []
 
 # Iterate over unique combinations of distribution_center_name and product_name
 unique_combinations = data.groupby(['ds', 'distribution_center_name', 'product_name']).size().reset_index().drop(0, axis=1)
@@ -75,7 +76,7 @@ for index, row in unique_combinations.iterrows():
     model.fit(subset_data)
 
     # Make future dates DataFrame for forecasting
-    future = model.make_future_dataframe(periods=30, freq='1D')  # Adjust forecast period as needed
+    future = model.make_future_dataframe(periods=30)  # Adjust forecast period as needed
 
     # Identify the one-hot encoded columns
     regressor_columns = [col for col in subset_data.columns if
@@ -108,8 +109,25 @@ for index, row in unique_combinations.iterrows():
     # Append forecast to all_forecasts
     all_forecasts.append(forecast)
 
-# Combine all forecasts into a single DataFrame
+    # # Perform cross-validation
+    # cv_results = cross_validation(model, initial='367 days', period='60 days', horizon='10 days')
+    # metrics = performance_metrics(cv_results)
+    #
+    # # Print cv results and metrics for each combination
+    # print(f"== Cross-validation Results for {distribution_center} - {product}:")
+    # print(cv_results)
+    # print(f"== Performance Metrics for {distribution_center} - {product}:")
+    # print(metrics)
+    #
+    # metrics['distribution_center_name'] = distribution_center
+    # metrics['product_name'] = product
+    # metrics['horizon'] = metrics['horizon'].astype(str)
+    #
+    # all_metrics.append(metrics)
+
+# Combine all forecasts and metrics into a single DataFrame
 forecast_data = pd.concat(all_forecasts)
+# metric_data = pd.concat(all_metrics)
 
 # Check the results
 print(forecast_data.head())
@@ -125,6 +143,15 @@ pandas_gbq.to_gbq(
     if_exists='replace',
     credentials=credentials
 )
+
+# Save metrics to BigQuery
+# pandas_gbq.to_gbq(
+#         metric_data,
+#         'dce-gcp-training.idp_demand_forecasting.prophet_model_metrics',
+#         project_id=gcp_project_id,
+#         if_exists='append',
+#         credentials=credentials
+#     )
 
 # Optionally, you can perform cross-validation and calculate metrics for each model
 # Iterate over unique combinations again
@@ -148,24 +175,4 @@ pandas_gbq.to_gbq(
 #
 #     model.fit(subset_data)
 
-    # Perform cross-validation
-    # cv_results = cross_validation(model, initial='730 days', period='90 days', horizon='30 days')
-    # metrics = performance_metrics(cv_results)
-    #
-    # # Print cv results and metrics for each combination
-    # print(f"== Cross-validation Results for {distribution_center} - {product}:")
-    # print(cv_results)
-    # print(f"== Performance Metrics for {distribution_center} - {product}:")
-    # print(metrics)
 
-    # Optionally save metrics to BigQuery
-    # metrics['distribution_center_name'] = distribution_center
-    # metrics['product_name'] = product
-    # metrics['horizon'] = metrics['horizon'].astype(str)
-    # pandas_gbq.to_gbq(
-    #     metrics,
-    #     'dce-gcp-training.idp_demand_forecasting.prophet_model_metrics',
-    #     project_id=gcp_project_id,
-    #     if_exists='append',
-    #     credentials=credentials
-    # )
