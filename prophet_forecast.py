@@ -1,3 +1,4 @@
+import warnings
 import pandas_gbq
 import pandas as pd
 import itertools
@@ -8,6 +9,8 @@ from prophet.diagnostics import cross_validation
 from prophet.diagnostics import performance_metrics
 from prophet.plot import plot_cross_validation_metric
 from google.oauth2 import service_account
+
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
 
 # Function to sanitize column names for BigQuery
@@ -34,149 +37,135 @@ credentials = service_account.Credentials.from_service_account_file(
 )
 
 # Load data from BigQuery
-data = pandas_gbq.read_gbq("SELECT * FROM `dce-gcp-training.idp_demand_forecasting.model_features`", project_id=gcp_project_id, credentials=credentials)
+data = pandas_gbq.read_gbq("SELECT * FROM `dce-gcp-training.idp_demand_forecasting.model_features`",
+                           project_id=gcp_project_id, credentials=credentials)
 
 # Convert date string to actual date datatype
 data['ds'] = pd.to_datetime(data['ds'])
 
-# Data basic info
-# print('== Data Info:')
-# print(data.info())
-# print(data.head())
+# Prepare to store results
+all_forecasts = []
 
-# One-hot encode categorical regressors
-data = pd.get_dummies(data, columns=['distribution_center_name', 'product_name'])
+# Iterate over unique combinations of distribution_center_name and product_name
+unique_combinations = data.groupby(['ds', 'distribution_center_name', 'product_name']).size().reset_index().drop(0, axis=1)
 
-# Create Prophet model
-model = Prophet(
-    yearly_seasonality=True,
-    changepoint_prior_scale=0.1,
-    seasonality_prior_scale=0.01
-)
+for index, row in unique_combinations.iterrows():
+    distribution_center = row['distribution_center_name']
+    product = row['product_name']
 
-# Add regressors
-for col in data.columns:
-    if col.startswith('distribution_center_name_') or col.startswith('product_name_'):
-        model.add_regressor(col)
+    # Filter data for the current combination
+    subset_data = data[(data['distribution_center_name'] == distribution_center) & (data['product_name'] == product)]
 
-# Fit model
-model.fit(data)
+    # One-hot encode categorical regressors
+    subset_data = pd.get_dummies(subset_data, columns=['distribution_center_name', 'product_name'])
 
-# Make future dates DataFrame for forecasting
-future = model.make_future_dataframe(periods=30, freq='1D')  # Adjust forecast period as needed
+    # Create Prophet model
+    model = Prophet(
+        yearly_seasonality=True,
+        changepoint_prior_scale=0.1,
+        seasonality_prior_scale=0.01
+    )
 
-# Identify the one-hot encoded columns
-regressor_columns = [col for col in data.columns if col.startswith('distribution_center_name_') or col.startswith('product_name_')]
+    # Add regressors
+    for col in subset_data.columns:
+        if col.startswith('distribution_center_name_') or col.startswith('product_name_'):
+            model.add_regressor(col)
 
-# Get the last known values of the regressors
-last_known_values = data.iloc[-1][regressor_columns]
+    # Fit model
+    model.fit(subset_data)
 
-# Add regressors to the future dataframe
-future = future.merge(data[['ds'] + regressor_columns], on='ds', how='left')
+    # Make future dates DataFrame for forecasting
+    future = model.make_future_dataframe(periods=30, freq='1D')  # Adjust forecast period as needed
 
-# Fill NaN values with the last known values
-future[regressor_columns] = future[regressor_columns].fillna(last_known_values)
+    # Identify the one-hot encoded columns
+    regressor_columns = [col for col in subset_data.columns if
+                         col.startswith('distribution_center_name_') or col.startswith('product_name_')]
 
-# Check future dataframe output
-# print('== Future Dataframe')
-# print(future.info())
-# print(future.head())
+    # Get the last known values of the regressors
+    last_known_values = subset_data.iloc[-1][regressor_columns]
 
-# Generate forecast for future dates
-forecast = model.predict(future)
+    # Add regressors to the future dataframe
+    future = future.merge(subset_data[['ds'] + regressor_columns], on='ds', how='left')
 
-# model.plot_components(forecast)
+    # Fill NaN values with the last known values
+    future[regressor_columns] = future[regressor_columns].fillna(last_known_values)
 
-# Merge one-hot encoded regressor columns from future into forecast based on 'ds'
-forecast = forecast.merge(future[['ds'] + regressor_columns], on='ds', how='left')
+    # Generate forecast for future dates
+    forecast = model.predict(future)
 
-# Undummy 'distribution_center_name'
-forecast = undummy(forecast, 'distribution_center_name_')
+    # Merge one-hot encoded regressor columns from future into forecast based on 'ds'
+    # forecast = forecast.merge(future[['ds'] + regressor_columns], on='ds', how='left')
 
-# Undummy 'product_name'
-forecast = undummy(forecast, 'product_name_')
+    # Undummy 'distribution_center_name'
+    forecast = undummy(forecast, 'distribution_center_name_')
 
-forecast = forecast[['ds', 'distribution_center_name', 'product_name', 'yhat', 'yhat_lower', 'yhat_upper']]
+    # Undummy 'product_name'
+    forecast = undummy(forecast, 'product_name_')
+
+    # Keep only necessary columns
+    forecast = forecast[['ds', 'distribution_center_name', 'product_name', 'yhat', 'yhat_lower', 'yhat_upper']]
+
+    # Append forecast to all_forecasts
+    all_forecasts.append(forecast)
+
+# Combine all forecasts into a single DataFrame
+forecast_data = pd.concat(all_forecasts)
 
 # Check the results
-# print(forecast.head())
-
-# Fill NaN values in regressor columns with the last known values
-# for col in regressor_columns:
-#     if col in last_known_values:
-#         forecast[col].fillna(last_known_values[col], inplace=True)
-
-# Check forecast dataframe output
-# print('== Forecast Dataframe:')
-# print(forecast.info())
-# print(forecast.tail())
-
-# Perform cross-validation for the current distribution center
-# cv_results = cross_validation(model, initial='730 days', period='90 days', horizon='30 days')
-
-# Print cv results
-# print("== Cross-validation Results:")
-# print(cv_results)
-
-# Visualize results
-# plot_cross_validation_metric(cv_results, metric='mae')
-# plt.show()
-
-# Calculate error metrics for all cross-validation results
-# metrics = performance_metrics(cv_results)
-
-# Print error metrics
-# print("== Performance Metrics:")
-# print(metrics)
+print(forecast_data.head())
 
 # Output forecast data to a CSV file
 # forecast_data.to_csv('forecast_results.csv', index=False)
 
-########## Push results to BigQuery ##########
-
-# Forecast results
+# Push forecast results to BigQuery
 pandas_gbq.to_gbq(
-    sanitize_column_names(forecast).reset_index().drop(columns='index'),
+    forecast_data,
     'dce-gcp-training.idp_demand_forecasting.prophet_model_forecast_results',
     project_id=gcp_project_id,
     if_exists='replace',
     credentials=credentials
 )
 
-# # Model metrics
-# Push model metrics to BigQuery
-# metrics['horizon'] = metrics['horizon'].astype(str)
-# pandas_gbq.to_gbq(
-#     metrics,
-#     'dce-gcp-training.idp_demand_forecasting.prophet_model_metrics',
-#     project_id=gcp_project_id,
-#     if_exists='replace',
-#     credentials=credentials
-# )
+# Optionally, you can perform cross-validation and calculate metrics for each model
+# Iterate over unique combinations again
+# for index, row in unique_combinations.iterrows():
+#     distribution_center = row['distribution_center_name']
+#     product = row['product_name']
+#
+#     # Filter data for the current combination
+#     subset_data = data[(data['distribution_center_name'] == distribution_center) & (data['product_name'] == product)]
+#
+#     # Create and fit Prophet model as before
+#     model = Prophet(
+#         yearly_seasonality=True,
+#         changepoint_prior_scale=0.1,
+#         seasonality_prior_scale=0.01
+#     )
+#
+#     for col in subset_data.columns:
+#         if col.startswith('distribution_center_name_') or col.startswith('product_name_'):
+#             model.add_regressor(col)
+#
+#     model.fit(subset_data)
 
-########## Use this code below to get the best parameters for model ##########
+    # Perform cross-validation
+    # cv_results = cross_validation(model, initial='730 days', period='90 days', horizon='30 days')
+    # metrics = performance_metrics(cv_results)
+    #
+    # # Print cv results and metrics for each combination
+    # print(f"== Cross-validation Results for {distribution_center} - {product}:")
+    # print(cv_results)
+    # print(f"== Performance Metrics for {distribution_center} - {product}:")
+    # print(metrics)
 
-# param_grid = {
-#     'changepoint_prior_scale': [0.001, 0.01, 0.1, 0.5],
-#     'seasonality_prior_scale': [0.01, 0.1, 1.0, 10.0],
-# }
-#
-# # Generate all combinations of parameters
-# all_params = [dict(zip(param_grid.keys(), v)) for v in itertools.product(*param_grid.values())]
-# rmses = []  # Store the RMSEs for each params here
-#
-# # Use cross validation to evaluate all parameters
-# for params in all_params:
-#     m = Prophet(**params).fit(data)  # Fit model with given params
-#     df_cv = cross_validation(m, initial='730 days', period='90 days', horizon='30 days')
-#     df_p = performance_metrics(df_cv, rolling_window=1)
-#     rmses.append(df_p['rmse'].values[0])
-#
-# # Find the best parameters
-# tuning_results = pd.DataFrame(all_params)
-# tuning_results['rmse'] = rmses
-# print(tuning_results)
-#
-# # Python
-# best_params = all_params[np.argmin(rmses)]
-# print(best_params)
+    # Optionally save metrics to BigQuery
+    # metrics['distribution_center_name'] = distribution_center
+    # metrics['product_name'] = product
+    # metrics['horizon'] = metrics['horizon'].astype(str)
+    # pandas_gbq.to_gbq(
+    #     metrics,
+    #     'dce-gcp-training.idp_demand_forecasting.prophet_model_metrics',
+    #     project_id=gcp_project_id,
+    #     if_exists='append',
+    #     credentials=credentials
+    # )
