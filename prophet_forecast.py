@@ -9,6 +9,23 @@ from prophet.diagnostics import performance_metrics
 from prophet.plot import plot_cross_validation_metric
 from google.oauth2 import service_account
 
+
+# Function to sanitize column names for BigQuery
+def sanitize_column_names(df):
+    df.columns = df.columns.str.replace(r'[^a-zA-Z0-9_]', '_', regex=True)
+    df.columns = df.columns.str.replace(r'__+', '_', regex=True)
+    df.columns = df.columns.str.strip('_')
+    return df
+
+
+# Function to revert one-hot encoding
+def undummy(df, prefix):
+    dummy_cols = [col for col in df.columns if col.startswith(prefix)]
+    df[prefix.rstrip('_')] = df[dummy_cols].idxmax(axis=1).str.replace(prefix, '')
+    df.drop(columns=dummy_cols, inplace=True)
+    return df
+
+
 # Assign variables for GCP project and credentials
 gcp_project_id = "dce-gcp-training"
 
@@ -73,6 +90,15 @@ forecast = model.predict(future)
 # Merge one-hot encoded regressor columns from future into forecast based on 'ds'
 forecast = forecast.merge(future[['ds'] + regressor_columns], on='ds', how='left')
 
+# Undummy 'distribution_center_name'
+forecast = undummy(forecast, 'distribution_center_name_')
+
+# Undummy 'product_name'
+forecast = undummy(forecast, 'product_name_')
+
+# Check the results
+print(forecast.head())
+
 # Fill NaN values in regressor columns with the last known values
 # for col in regressor_columns:
 #     if col in last_known_values:
@@ -84,18 +110,18 @@ forecast = forecast.merge(future[['ds'] + regressor_columns], on='ds', how='left
 # print(forecast.tail())
 
 # Perform cross-validation for the current distribution center
-cv_results = cross_validation(model, initial='730 days', period='90 days', horizon='30 days')
+# cv_results = cross_validation(model, initial='730 days', period='90 days', horizon='30 days')
 
 # Print cv results
 # print("== Cross-validation Results:")
 # print(cv_results)
 
 # Visualize results
-plot_cross_validation_metric(cv_results, metric='mae')
-plt.show()
+# plot_cross_validation_metric(cv_results, metric='mae')
+# plt.show()
 
 # Calculate error metrics for all cross-validation results
-metrics = performance_metrics(cv_results)
+# metrics = performance_metrics(cv_results)
 
 # Print error metrics
 # print("== Performance Metrics:")
@@ -107,15 +133,24 @@ metrics = performance_metrics(cv_results)
 ########## Push results to BigQuery ##########
 
 # Forecast results
-pandas_gbq.to_gbq(
-    forecast, 'dce-gcp-training.idp_demand_forecasting.prophet_model_forecast_results', project_id=gcp_project_id, if_exists='replace',
-)
+# pandas_gbq.to_gbq(
+#     sanitize_column_names(forecast).reset_index(),
+#     'dce-gcp-training.idp_demand_forecasting.prophet_model_forecast_results',
+#     project_id=gcp_project_id,
+#     if_exists='replace',
+#     credentials=credentials
+# )
 
 # # Model metrics
-metrics['horizon'] = metrics['horizon'].astype(str)
-pandas_gbq.to_gbq(
-    metrics, 'dce-gcp-training.idp_demand_forecasting.prophet_model_metrics', project_id=gcp_project_id, if_exists='replace',
-)
+# Push model metrics to BigQuery
+# metrics['horizon'] = metrics['horizon'].astype(str)
+# pandas_gbq.to_gbq(
+#     metrics,
+#     'dce-gcp-training.idp_demand_forecasting.prophet_model_metrics',
+#     project_id=gcp_project_id,
+#     if_exists='replace',
+#     credentials=credentials
+# )
 
 ########## Use this code below to get the best parameters for model ##########
 
