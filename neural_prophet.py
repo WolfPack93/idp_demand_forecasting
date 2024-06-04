@@ -1,7 +1,5 @@
 import pandas_gbq
 import pandas as pd
-import itertools
-import numpy as np
 import matplotlib.pyplot as plt
 from neuralprophet import NeuralProphet, set_random_seed
 from google.oauth2 import service_account

@@ -96,8 +96,10 @@ forecast = undummy(forecast, 'distribution_center_name_')
 # Undummy 'product_name'
 forecast = undummy(forecast, 'product_name_')
 
+forecast = forecast[['ds', 'distribution_center_name', 'product_name', 'yhat', 'yhat_lower', 'yhat_upper']]
+
 # Check the results
-print(forecast.head())
+# print(forecast.head())
 
 # Fill NaN values in regressor columns with the last known values
 # for col in regressor_columns:
@@ -133,13 +135,13 @@ print(forecast.head())
 ########## Push results to BigQuery ##########
 
 # Forecast results
-# pandas_gbq.to_gbq(
-#     sanitize_column_names(forecast).reset_index(),
-#     'dce-gcp-training.idp_demand_forecasting.prophet_model_forecast_results',
-#     project_id=gcp_project_id,
-#     if_exists='replace',
-#     credentials=credentials
-# )
+pandas_gbq.to_gbq(
+    sanitize_column_names(forecast).reset_index().drop(columns='index'),
+    'dce-gcp-training.idp_demand_forecasting.prophet_model_forecast_results',
+    project_id=gcp_project_id,
+    if_exists='replace',
+    credentials=credentials
+)
 
 # # Model metrics
 # Push model metrics to BigQuery
