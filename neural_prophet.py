@@ -21,7 +21,7 @@ data = pandas_gbq.read_gbq("SELECT * FROM `dce-gcp-training.idp_demand_forecasti
 data['ds'] = pd.to_datetime(data['ds'])
 
 # One-hot encode categorical regressors
-data = pd.get_dummies(data, columns=['distribution_center_name', 'product_name'])
+# data = pd.get_dummies(data, columns=['distribution_center_name', 'product_name'])
 
 # Create NeuralProphet model
 model = NeuralProphet(
@@ -36,10 +36,10 @@ model = NeuralProphet(
 # Add regressors
 for col in data.columns:
     if col.startswith('distribution_center_name_') or col.startswith('product_name_'):
-        model.add_regressor(col)
+        model.add_future_regressor(col)
 
 # Fit model
-metrics = model.fit(data, freq='D')
+metrics = model.fit(data)
 
 # Make future dates DataFrame for forecasting
 future = model.make_future_dataframe(data, periods=30, n_historic_predictions=len(data))  # Adjust forecast period as needed
