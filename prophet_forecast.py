@@ -135,13 +135,13 @@ forecast = forecast[['ds', 'distribution_center_name', 'product_name', 'yhat', '
 ########## Push results to BigQuery ##########
 
 # Forecast results
-pandas_gbq.to_gbq(
-    sanitize_column_names(forecast).reset_index().drop(columns='index'),
-    'dce-gcp-training.idp_demand_forecasting.prophet_model_forecast_results',
-    project_id=gcp_project_id,
-    if_exists='replace',
-    credentials=credentials
-)
+# pandas_gbq.to_gbq(
+#     sanitize_column_names(forecast).reset_index().drop(columns='index'),
+#     'dce-gcp-training.idp_demand_forecasting.prophet_model_forecast_results',
+#     project_id=gcp_project_id,
+#     if_exists='replace',
+#     credentials=credentials
+# )
 
 # # Model metrics
 # Push model metrics to BigQuery
@@ -161,9 +161,11 @@ pandas_gbq.to_gbq(
 #     'seasonality_prior_scale': [0.01, 0.1, 1.0, 10.0],
 # }
 #
+#
 # # Generate all combinations of parameters
 # all_params = [dict(zip(param_grid.keys(), v)) for v in itertools.product(*param_grid.values())]
 # rmses = []  # Store the RMSEs for each params here
+#
 #
 # # Use cross validation to evaluate all parameters
 # for params in all_params:
@@ -172,11 +174,12 @@ pandas_gbq.to_gbq(
 #     df_p = performance_metrics(df_cv, rolling_window=1)
 #     rmses.append(df_p['rmse'].values[0])
 #
+#
 # # Find the best parameters
 # tuning_results = pd.DataFrame(all_params)
 # tuning_results['rmse'] = rmses
 # print(tuning_results)
 #
-# # Python
+#
 # best_params = all_params[np.argmin(rmses)]
 # print(best_params)
