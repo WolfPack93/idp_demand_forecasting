@@ -1,10 +1,7 @@
 from prophet import Prophet
-from prophet.plot import plot_plotly, add_changepoints_to_plot
-import plotly.offline as py
-import numpy as np
+from prophet.plot import add_changepoints_to_plot
 import pandas as pd
 import matplotlib.pyplot as plt
-import os
 plt.style.use('fivethirtyeight')
 
 #################################################
