@@ -7,12 +7,26 @@ plt.style.use('fivethirtyeight')
 #################################################
 ################### LOAD DATA ###################
 
-file = 'AirPassengers.csv'
+file = 'Bakery_Sales.csv'
 
 df = pd.read_csv(file)
 
 ###########################################
 ################### EDA ###################
+
+# Select Columns for analysis
+df = df[['datetime', 'tiramisu_croissant']]
+
+# Convert the 'Datetime' column to actual datetime objects
+df['datetime'] = pd.to_datetime(df['datetime'])
+df['datetime'] = df['datetime'].dt.strftime('%Y-%m-%d')
+df['datetime'] = pd.to_datetime(df['datetime'])
+
+# Drop rows with any NaN values
+df = df.dropna()
+
+# Group by day
+df.groupby(df['datetime'].dt.date)
 
 # Basic data info
 print(df.info())
@@ -20,19 +34,19 @@ print(df.describe())
 print(df.head())
 
 # Rename columns for clarity
-df.rename(columns={'#Passengers': 'AirPassengers'}, inplace=True)
-print(df.head())
+# df.rename(columns={'#Passengers': 'AirPassengers'}, inplace=True)
+# print(df.head())
 
 # Convert date object to datetime type
-df['Month'] = pd.DatetimeIndex(df['Month'])
-print(df.dtypes)
-
-# Rename columns to conform to Prophet input columns. ds (the time column) and y (the metric column)
-df = df.rename(columns={'Month': 'ds',
-                        'AirPassengers': 'y'})
+# df['datetime'] = pd.DatetimeIndex(df['datetime'])
+# print(df.dtypes)
+#
+# # Rename columns to conform to Prophet input columns. ds (the time column) and y (the metric column)
+df = df.rename(columns={'datetime': 'ds',
+                        'tiramisu_croissant': 'y'})
 print(df.head())
-
-# Visualize the data
+#
+# # Visualize the data
 print('== Data Visualization')
 ax = df.set_index('ds').plot(figsize=(12, 8))
 ax.set_ylabel('Monthly Number of Airline Passengers')
@@ -48,7 +62,7 @@ model = Prophet(interval_width=0.95, yearly_seasonality=True, weekly_seasonality
 
 # Fit the model
 model.fit(df)
-
+#
 # Create future dataframe
 # We instructed Prophet to generate 36 datestamps in the future. This can be changed as needed.
 # Because we are working with monthly data, we clearly specified the desired frequency of the timestamps (in this case, MS is the start of the month)
