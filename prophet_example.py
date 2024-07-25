@@ -33,6 +33,7 @@ df = df.rename(columns={'Month': 'ds',
 print(df.head())
 
 # Visualize the data
+print('== Data Visualization')
 ax = df.set_index('ds').plot(figsize=(12, 8))
 ax.set_ylabel('Monthly Number of Airline Passengers')
 ax.set_xlabel('Date')
@@ -43,7 +44,7 @@ plt.show()
 ################### CREATE THE MODEL ###################
 
 # set the uncertainty interval to 95% (the Prophet default is 80%)
-model = Prophet(interval_width=0.95)
+model = Prophet(interval_width=0.95, yearly_seasonality=True, weekly_seasonality=True)
 
 # Fit the model
 model.fit(df)
@@ -67,6 +68,7 @@ forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].head()
 
 # Plot the results of our forecasts
 # Prophet plots the observed values of our time series (the black dots), the forecasted values (blue line) and the uncertainty intervals of our forecasts (the blue shaded regions).
+print('== Forecasted Data With Uncertainty')
 model.plot(forecast, uncertainty=True)
 plt.show()
 
@@ -76,6 +78,7 @@ plt.show()
 # The first plot shows that the monthly volume of airline passengers has been linearly increasing over time.
 # The second plot highlights the fact that the weekly count of passengers peaks towards the end of the week and on Saturday.
 # The third plot shows that the most traffic occurs during the holiday months of July and August.
+print('== Forecast Components')
 model.plot_components(forecast)
 plt.show()
 
@@ -84,15 +87,17 @@ plt.show()
 # Changepoints are the datetime points where the time series have abrupt changes in the trajectory.
 # By default, Prophet adds 25 changepoints to the initial 80% of the data-set.
 # Let’s plot the vertical lines where the potential changepoints occurred.
+print('== Plot With Default Changepoints')
 fig = model.plot(forecast)
 a = add_changepoints_to_plot(fig.gca(), model, forecast)
 plt.show()
 # Output the dates where changepoints occurred
-print(model.changepoints)
+print(f'== Changpoint Dates {model.changepoints}')
 
 # We can change the inferred changepoint range by setting the changepoint_range
 # The number of changepoints can be set by using the n_changepoints parameter when initializing prophet.
-pro_change= Prophet(n_changepoints=20, yearly_seasonality=True)
+print('== Changpoints Set To 20 with yearly seasonality')
+pro_change= Prophet(n_changepoints=20, yearly_seasonality=True, weekly_seasonality=True)
 forecast = pro_change.fit(df).predict(future_dates)
 fig= pro_change.plot(forecast);
 a = add_changepoints_to_plot(fig.gca(), pro_change, forecast)
@@ -106,13 +111,15 @@ plt.show()
 # Decrease the value to make the trend less flexible.
 # Increase the value of changepoint_prior_scale to make the trend more flexible.
 # Increasing the changepoint_prior_scale to 0.08 to make the trend flexible.
-pro_change= Prophet(n_changepoints=20, yearly_seasonality=True, changepoint_prior_scale=0.08)
+print('== Changpoints With Trend Adjustment For More Flexibility')
+pro_change = Prophet(n_changepoints=20, yearly_seasonality=True, changepoint_prior_scale=0.08)
 forecast = pro_change.fit(df).predict(future_dates)
 fig= pro_change.plot(forecast);
 a = add_changepoints_to_plot(fig.gca(), pro_change, forecast)
 plt.show()
 
 # Decreasing the changepoint_prior_scale to 0.001 to make the trend less flexible.
+print('== Changpoints With Trend Adjustment For Less Flexibility')
 pro_change= Prophet(n_changepoints=20, yearly_seasonality=True, changepoint_prior_scale=0.001)
 forecast = pro_change.fit(df).predict(future_dates)
 fig= pro_change.plot(forecast);
