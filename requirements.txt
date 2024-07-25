@@ -1,0 +1,4 @@
+prophet
+plotly
+pandas
+numpy
