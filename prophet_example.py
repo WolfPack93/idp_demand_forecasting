@@ -49,7 +49,7 @@ print(df.head())
 # # Visualize the data
 print('== Data Visualization')
 ax = df.set_index('ds').plot(figsize=(12, 8))
-ax.set_ylabel('Monthly Number of Airline Passengers')
+ax.set_ylabel('Number of Items Sold')
 ax.set_xlabel('Date')
 
 plt.show()
