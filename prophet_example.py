@@ -1,7 +1,13 @@
 from prophet import Prophet
 from prophet.plot import add_changepoints_to_plot
+from sklearn.metrics import mean_absolute_error
+from prophet.diagnostics import cross_validation
+from prophet.diagnostics import performance_metrics
+import itertools
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+
 plt.style.use('fivethirtyeight')
 
 #################################################
@@ -33,14 +39,6 @@ print(df.info())
 print(df.describe())
 print(df.head())
 
-# Rename columns for clarity
-# df.rename(columns={'#Passengers': 'AirPassengers'}, inplace=True)
-# print(df.head())
-
-# Convert date object to datetime type
-# df['datetime'] = pd.DatetimeIndex(df['datetime'])
-# print(df.dtypes)
-#
 # # Rename columns to conform to Prophet input columns. ds (the time column) and y (the metric column)
 df = df.rename(columns={'datetime': 'ds',
                         'tiramisu_croissant': 'y'})
@@ -57,8 +55,19 @@ plt.show()
 ########################################################
 ################### CREATE THE MODEL ###################
 
+# Define holidays or special events
+events = pd.DataFrame({
+    'holiday': 'special_event',
+    'ds': pd.to_datetime(['2024-08-15', '2024-10-15']),
+    'lower_window': 0,
+    'upper_window': 1,
+})
+
 # set the uncertainty interval to 95% (the Prophet default is 80%)
-model = Prophet(interval_width=0.95, yearly_seasonality=True, weekly_seasonality=True)
+model = Prophet(interval_width=0.95, yearly_seasonality=True, weekly_seasonality=True)  # holidays=events)
+
+# Add built-in country holidays
+model.add_country_holidays(country_name='US')  # Replace 'US' with your desired country code
 
 # Fit the model
 model.fit(df)
@@ -89,9 +98,6 @@ plt.show()
 ##########################################################################
 ################### PLOTTING THE FORECASTED COMPONENTS ###################
 # Plot components of the forecast
-# The first plot shows that the monthly volume of airline passengers has been linearly increasing over time.
-# The second plot highlights the fact that the weekly count of passengers peaks towards the end of the week and on Saturday.
-# The third plot shows that the most traffic occurs during the holiday months of July and August.
 print('== Forecast Components')
 model.plot_components(forecast)
 plt.show()
@@ -111,9 +117,9 @@ print(f'== Changpoint Dates {model.changepoints}')
 # We can change the inferred changepoint range by setting the changepoint_range
 # The number of changepoints can be set by using the n_changepoints parameter when initializing prophet.
 print('== Changpoints Set To 20 with yearly seasonality')
-pro_change= Prophet(n_changepoints=20, yearly_seasonality=True, weekly_seasonality=True)
+pro_change = Prophet(n_changepoints=20, yearly_seasonality=True, weekly_seasonality=True)
 forecast = pro_change.fit(df).predict(future_dates)
-fig= pro_change.plot(forecast);
+fig = pro_change.plot(forecast);
 a = add_changepoints_to_plot(fig.gca(), pro_change, forecast)
 plt.show()
 
@@ -125,17 +131,47 @@ plt.show()
 # Decrease the value to make the trend less flexible.
 # Increase the value of changepoint_prior_scale to make the trend more flexible.
 # Increasing the changepoint_prior_scale to 0.08 to make the trend flexible.
-print('== Changpoints With Trend Adjustment For More Flexibility')
-pro_change = Prophet(n_changepoints=20, yearly_seasonality=True, changepoint_prior_scale=0.08)
+print('== Changpoints and Prior Scale With Best Params')
+pro_change = Prophet(n_changepoints=20, yearly_seasonality=True, seasonality_prior_scale=0.01, changepoint_prior_scale=0.01)
 forecast = pro_change.fit(df).predict(future_dates)
-fig= pro_change.plot(forecast);
+fig = pro_change.plot(forecast);
 a = add_changepoints_to_plot(fig.gca(), pro_change, forecast)
 plt.show()
 
 # Decreasing the changepoint_prior_scale to 0.001 to make the trend less flexible.
-print('== Changpoints With Trend Adjustment For Less Flexibility')
-pro_change= Prophet(n_changepoints=20, yearly_seasonality=True, changepoint_prior_scale=0.001)
-forecast = pro_change.fit(df).predict(future_dates)
-fig= pro_change.plot(forecast);
-a = add_changepoints_to_plot(fig.gca(), pro_change, forecast)
-plt.show()
+# print('== Changpoints With Trend Adjustment For Less Flexibility')
+# pro_change = Prophet(n_changepoints=20, yearly_seasonality=True, changepoint_prior_scale=0.001)
+# forecast = pro_change.fit(df).predict(future_dates)
+# fig = pro_change.plot(forecast);
+# a = add_changepoints_to_plot(fig.gca(), pro_change, forecast)
+# plt.show()
+
+##############################################################################
+########## Use this code below to get the best parameters for model ##########
+# param_grid = {
+#     'changepoint_prior_scale': [0.001, 0.01, 0.1, 0.5],
+#     'seasonality_prior_scale': [0.01, 0.1, 1.0, 10.0],
+# }
+#
+#
+# # Generate all combinations of parameters
+# all_params = [dict(zip(param_grid.keys(), v)) for v in itertools.product(*param_grid.values())]
+# rmses = []  # Store the RMSEs for each params here
+#
+#
+# # Use cross validation to evaluate all parameters
+# for params in all_params:
+#     m = Prophet(**params).fit(df)  # Fit model with given params
+#     df_cv = cross_validation(m, initial='180 days', period='90 days', horizon='30 days')
+#     df_p = performance_metrics(df_cv, rolling_window=1)
+#     rmses.append(df_p['rmse'].values[0])
+#
+#
+# # Find the best parameters
+# tuning_results = pd.DataFrame(all_params)
+# tuning_results['rmse'] = rmses
+# print(tuning_results)
+#
+#
+# best_params = all_params[np.argmin(rmses)]
+# print(best_params)
